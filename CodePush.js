@@ -163,25 +163,26 @@ function getPromisifiedSdk(requestFetchAdapter, config) {
 // in the lifetime of this module instance.
 const notifyApplicationReady = (() => {
   let notifyApplicationReadyPromise;
-  return () => {
+  return (options) => {
     if (!notifyApplicationReadyPromise) {
-      notifyApplicationReadyPromise = notifyApplicationReadyInternal();
+      notifyApplicationReadyPromise = notifyApplicationReadyInternal(options);
     }
 
     return notifyApplicationReadyPromise;
   };
 })();
 
-async function notifyApplicationReadyInternal() {
+async function notifyApplicationReadyInternal(options) {
   await NativeCodePush.notifyApplicationReady();
   const statusReport = await NativeCodePush.getNewStatusReport();
-  statusReport && tryReportStatus(statusReport); // Don't wait for this to complete.
+  statusReport && tryReportStatus(options, statusReport); // Don't wait for this to complete.
 
   return statusReport;
 }
 
-async function tryReportStatus(statusReport, retryOnAppResume) {
+async function tryReportStatus(options, statusReport, retryOnAppResume) {
   const config = await getConfiguration();
+  config.deploymentKey = config.deploymentKey || options.deploymentKey
   const previousLabelOrAppVersion = statusReport.previousLabelOrAppVersion;
   const previousDeploymentKey = statusReport.previousDeploymentKey || config.deploymentKey;
   try {
@@ -193,7 +194,7 @@ async function tryReportStatus(statusReport, retryOnAppResume) {
       }
 
       const sdk = getPromisifiedSdk(requestFetchAdapter, config);
-      await sdk.reportStatusDeploy(/* deployedPackage */ null, /* status */ null, previousLabelOrAppVersion, previousDeploymentKey);
+      await sdk.reportStatusDeploy( /* deployedPackage */ null, /* status */ null, previousLabelOrAppVersion, previousDeploymentKey);
     } else {
       const label = statusReport.package.label;
       if (statusReport.status === "DeploymentSucceeded") {
@@ -219,7 +220,7 @@ async function tryReportStatus(statusReport, retryOnAppResume) {
         if (newState !== "active") return;
         const refreshedStatusReport = await NativeCodePush.getNewStatusReport();
         if (refreshedStatusReport) {
-          tryReportStatus(refreshedStatusReport, resumeListener);
+          tryReportStatus(options, refreshedStatusReport, resumeListener);
         } else {
           resumeListener && resumeListener.remove();
         }
@@ -413,7 +414,7 @@ async function syncInternal(options = {}, syncStatusChangeCallback, downloadProg
       };
 
   try {
-    await CodePush.notifyApplicationReady();
+    await CodePush.notifyApplicationReady(syncOptions);
 
     syncStatusChangeCallback(CodePush.SyncStatus.CHECKING_FOR_UPDATE);
     const remotePackage = await checkForUpdate(syncOptions.deploymentKey, handleBinaryVersionMismatchCallback);
@@ -540,7 +541,7 @@ function codePushify(options = {}) {
 
       componentDidMount() {
         if (options.checkFrequency === CodePush.CheckFrequency.MANUAL) {
-          CodePush.notifyAppReady();
+          CodePush.notifyAppReady(options);
         } else {
           const rootComponentInstance = this.rootComponentRef.current;
 
